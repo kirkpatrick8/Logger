@@ -23,8 +23,17 @@ def process_csv(file):
     # Rename the Value column to the last six digits (or full name) of the file
     data = data.rename(columns={"Value": last_six_digits})
     
-    # Convert Datatime to datetime
-    data['Datatime'] = pd.to_datetime(data['Datatime'], format='%d/%m/%Y %H:%M', utc=True)
+    # Convert Datatime to datetime, trying different formats
+    date_formats = ['%d/%m/%y', '%d/%m/%Y', '%d/%m/%y %H:%M', '%d/%m/%Y %H:%M']
+    for date_format in date_formats:
+        try:
+            data['Datatime'] = pd.to_datetime(data['Datatime'], format=date_format)
+            break
+        except ValueError:
+            continue
+    else:
+        st.error(f"Unable to parse dates in file {file.name}. Please check the date format.")
+        return None
     
     # Select only Datatime and the renamed Value column
     data = data[['Datatime', last_six_digits]]
