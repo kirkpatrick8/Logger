@@ -13,27 +13,35 @@ def generate_unique_name(last_six_digits, existing_names):
     return new_name
 
 def process_csv(file, existing_names):
-    # Read data from the CSV file
-    data = pd.read_csv(file, encoding='utf-8')
+    # Read data from the CSV file, skipping the first 9 rows
+    data = pd.read_csv(file, skiprows=9, header=0, encoding='utf-8')
     
-    # Ensure that the data frame has "Datatime" and a second column
-    if len(data.columns) < 2:
-        st.warning(f"The CSV file {file} does not have at least two columns. Skipping this file.")
+    # Rename columns based on the number of columns present
+    if len(data.columns) == 2:
+        data.columns = ["Datatime", "Value"]
+    elif len(data.columns) >= 3:
+        data.columns = ["Datatime", "Value", "Unit"] + [f"Extra_{i}" for i in range(len(data.columns) - 3)]
+    else:
+        st.error(f"File {file.name} has an unexpected number of columns: {len(data.columns)}")
         return None, None
     
-    # Extract the last six digits from the file name
-    last_six_digits = os.path.splitext(file)[0][-6:]
+    # Extract the last six digits from the file name (or use the whole name if it's shorter)
+    file_name = os.path.splitext(file.name)[0]
+    last_six_digits = file_name[-6:] if len(file_name) > 6 else file_name
     
     # Generate a unique name for this column
     unique_name = generate_unique_name(last_six_digits, existing_names)
     
-    # Rename the second column to the unique name
-    data.columns = ['Datatime', unique_name]
+    # Rename the Value column to the unique name
+    data = data.rename(columns={"Value": unique_name})
     
     # Convert Datatime to datetime
-    data['Datatime'] = pd.to_datetime(data['Datatime'], format='%d/%m/%Y %H:%M')
+    data['Datatime'] = pd.to_datetime(data['Datatime'], format='%d/%m/%Y %H:%M', utc=True)
     
-    return data[['Datatime', unique_name]], unique_name
+    # Select only Datatime and the renamed Value column
+    data = data[['Datatime', unique_name]]
+    
+    return data, unique_name
 
 def main():
     st.title('Prime Logger Data Processor')
@@ -52,8 +60,15 @@ def main():
                 existing_names.append(name)
 
         if data_list:
-            # Combine all data frames
-            combined_data = pd.concat(data_list, axis=1).drop_duplicates(subset=['Datatime'])
+            # Create a unique set of timestamps
+            all_timestamps = sorted(set(pd.concat([df['Datatime'] for df in data_list])))
+
+            # Create an empty dataframe with all timestamps
+            combined_data = pd.DataFrame({'Datatime': all_timestamps})
+
+            # Merge each processed CSV data into the combined data
+            for df in data_list:
+                combined_data = pd.merge(combined_data, df, on='Datatime', how='left')
 
             # Sort by Datatime
             combined_data = combined_data.sort_values('Datatime')
@@ -72,7 +87,7 @@ def main():
             st.download_button(
                 label="Download combined data as CSV",
                 data=csv,
-                file_name="combined_data_check_for_duplicates.csv",
+                file_name="combined_data.csv",
                 mime="text/csv",
             )
 
