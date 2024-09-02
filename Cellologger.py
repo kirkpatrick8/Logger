@@ -1,53 +1,39 @@
 import streamlit as st
 import pandas as pd
-import os
-from datetime import datetime
+import io
 
 def process_csv(file):
-    # Read data from the CSV file, skipping the first 9 rows
-    data = pd.read_csv(file, skiprows=9, header=0, encoding='utf-8')
+    # Read the entire content of the file
+    content = file.getvalue().decode('utf-8')
     
-    # Rename columns based on the number of columns present
-    if len(data.columns) == 2:
-        data.columns = ["Datatime", "Value"]
-    elif len(data.columns) >= 3:
-        data.columns = ["Datatime", "Value", "Unit"] + [f"Extra_{i}" for i in range(len(data.columns) - 3)]
-    else:
-        st.error(f"File {file.name} has an unexpected number of columns: {len(data.columns)}")
-        return None
+    # Split the content into lines
+    lines = content.split('\n')
     
-    # Extract the last six digits from the file name (or use the whole name if it's shorter)
-    file_name = os.path.splitext(file.name)[0]
-    last_six_digits = file_name[-6:] if len(file_name) > 6 else file_name
+    # Find the line with "Time" (which is our header)
+    header_index = next(i for i, line in enumerate(lines) if "Time" in line)
     
-    # Rename the Value column to the last six digits (or full name) of the file
-    data = data.rename(columns={"Value": last_six_digits})
+    # Extract the data part (including the header)
+    data_content = '\n'.join(lines[header_index:])
     
-    # Convert Datatime to datetime, trying different formats
-    date_formats = ['%d/%m/%y', '%d/%m/%Y', '%d/%m/%y %H:%M', '%d/%m/%Y %H:%M']
-    for date_format in date_formats:
-        try:
-            data['Datatime'] = pd.to_datetime(data['Datatime'], format=date_format)
-            break
-        except ValueError:
-            continue
-    else:
-        st.error(f"Unable to parse dates in file {file.name}. Please check the date format.")
-        return None
+    # Read the data into a pandas DataFrame
+    df = pd.read_csv(io.StringIO(data_content), parse_dates=['Time'])
     
-    # Select only Datatime and the renamed Value column
-    data = data[['Datatime', last_six_digits]]
+    # Rename columns
+    df = df.rename(columns={'Time': 'Datatime'})
     
-    return data
+    # The second column name might vary, so we'll rename it based on the file name
+    value_column = df.columns[1]
+    new_column_name = file.name.split('.')[0][-6:]  # Last 6 characters of the filename
+    df = df.rename(columns={value_column: new_column_name})
+    
+    return df[['Datatime', new_column_name]]
 
 def main():
     st.title('Cello Logger Data Processor')
 
-    # File uploader
     uploaded_files = st.file_uploader("Choose CSV files", accept_multiple_files=True, type='csv')
 
     if uploaded_files:
-        # Process each CSV file
         data_list = []
         for file in uploaded_files:
             data = process_csv(file)
@@ -70,9 +56,6 @@ def main():
 
             # Fill NA values with empty string
             combined_data = combined_data.fillna('')
-
-            # Reformat Datatime to original format
-            combined_data['Datatime'] = combined_data['Datatime'].dt.strftime('%d/%m/%Y %H:%M')
 
             # Display the combined data
             st.write(combined_data)
