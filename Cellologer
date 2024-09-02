@@ -32,7 +32,7 @@ def process_csv(file):
     return data
 
 def main():
-    st.title('Cello Test Data Processor')
+    st.title('Cello Logger Data Processor')
 
     # File uploader
     uploaded_files = st.file_uploader("Choose CSV files", accept_multiple_files=True, type='csv')
